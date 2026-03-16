@@ -5,7 +5,7 @@ import { InputAmount, TransactionItem, Header } from "../components/index";
 import { useSQLiteContext } from "expo-sqlite";
 import { drizzle } from "drizzle-orm/expo-sqlite";
 import * as productSchema from "../database/schemas/productSchema";
-import { asc, eq, like } from "drizzle-orm";
+import { asc, desc, eq, like } from "drizzle-orm";
 import { useFocusEffect } from "@react-navigation/native";
 
 const CATEGORIES = [
@@ -70,7 +70,8 @@ export function HomeScreen({ navigation }: any) {
       });
       const response = await db.query.entry.findMany({
         where: like(productSchema.entry.description, `%${search}%`),
-        orderBy: [asc(productSchema.entry.description)],
+        orderBy: [desc(productSchema.entry.date)],
+        limit: 5,
       });
       setWallet(responseWallet[0].value);
       setData(response);
