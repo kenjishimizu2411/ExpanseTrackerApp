@@ -4,6 +4,7 @@ export const category = sqliteTable("categories", {
   id: integer("id").primaryKey(),
   name: text("name").notNull(),
   color: text("color").notNull(),
+  isIncome: integer("is_income", { mode: "boolean" }).notNull().default(false),
 });
 
 export const entry = sqliteTable("entries", {

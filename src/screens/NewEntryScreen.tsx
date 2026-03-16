@@ -76,6 +76,7 @@ export function NewEntryScreen({ navigation }: NewEntryScreenProps) {
 
     try {
       let finalCategoryId: number;
+      let isCategoryIncome = false;
 
       const existingCategory = await db.query.category.findFirst({
         where: eq(schema.category.name, categoryName),
@@ -83,30 +84,33 @@ export function NewEntryScreen({ navigation }: NewEntryScreenProps) {
 
       if (existingCategory) {
         finalCategoryId = existingCategory.id;
+        isCategoryIncome = existingCategory.isIncome;
       } else {
         const newCategoryResponse = await db.insert(schema.category).values({
           name: categoryName,
           color: theme.colors.primary,
         });
         finalCategoryId = newCategoryResponse.lastInsertRowId;
+        const finalAmount = isCategoryIncome ? amount : -amount;
       }
+      const finalAmount = isCategoryIncome ? amount : -amount;
 
       await db.insert(schema.entry).values({
         description: description || categoryName,
         categoryId: finalCategoryId,
         date: date.toISOString(),
-        value: amount,
+        value: finalAmount,
       });
 
       if (walletExists) {
         await db
           .update(schema.wallet)
-          .set({ value: wallet - amount })
+          .set({ value: wallet + finalAmount })
           .where(eq(schema.wallet.id, 1));
       } else {
         await db.insert(schema.wallet).values({
           id: 1,
-          value: -amount,
+          value: finalAmount,
         });
       }
 
