@@ -1,5 +1,5 @@
 import React from "react";
-import { View, StyleSheet, ScrollView, Alert } from "react-native";
+import { View, StyleSheet, ScrollView, Alert, Image } from "react-native";
 import {
   Text,
   Avatar,
@@ -11,6 +11,7 @@ import {
 } from "react-native-paper";
 import { Header } from "../components";
 import { usePreferences } from "../contexts/PreferencesContext";
+import Rise2GetherLogo from "../utils/logo.png";
 
 interface SettingsScreenProps {
   navigation: any;
@@ -18,7 +19,6 @@ interface SettingsScreenProps {
 
 export function SettingsScreen({ navigation }: SettingsScreenProps) {
   const theme = useTheme();
-
   const { isThemeDark, toggleTheme } = usePreferences();
 
   const handleWipeData = () => {
@@ -48,18 +48,25 @@ export function SettingsScreen({ navigation }: SettingsScreenProps) {
         <View style={styles.profileSection}>
           <Avatar.Text
             size={80}
-            label="KS"
+            label="DA"
             style={{ backgroundColor: theme.colors.primary }}
           />
           <Text
             variant="titleLarge"
             style={[styles.name, { color: theme.colors.onBackground }]}
           >
-            Kenji Shimizu
+            Dev Account
           </Text>
           <Text variant="bodyMedium" style={{ color: theme.colors.secondary }}>
-            Rise2Gethers CTO
+            Rise2Gethers - CTO
           </Text>
+
+          {/* Logo da empresa — discreta, abaixo do cargo */}
+          <Image
+            source={Rise2GetherLogo}
+            style={styles.companyLogo}
+            resizeMode="contain"
+          />
         </View>
 
         <Divider style={styles.divider} />
@@ -81,7 +88,7 @@ export function SettingsScreen({ navigation }: SettingsScreenProps) {
             description="Gerenciar categorias de gastos"
             left={(props) => <List.Icon {...props} icon="shape-outline" />}
             right={(props) => <List.Icon {...props} icon="chevron-right" />}
-            onPress={() => console.log("Ir para categorias")}
+            onPress={() => navigation.navigate("ManageCategories")}
           />
         </List.Section>
 
@@ -123,6 +130,15 @@ const styles = StyleSheet.create({
   },
   divider: {
     marginVertical: 10,
+  },
+  // Logo pequena e com opacidade reduzida para não competir com o perfil.
+  // resizeMode="contain" garante que a proporção original é preservada
+  // independente do tamanho do container.
+  companyLogo: {
+    width: 48,
+    height: 48,
+    marginTop: 16,
+    opacity: 0.75,
   },
   versionText: {
     textAlign: "center",

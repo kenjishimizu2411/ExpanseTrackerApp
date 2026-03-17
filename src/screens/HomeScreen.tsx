@@ -1,33 +1,29 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState, useMemo } from "react";
 import { View, StyleSheet, FlatList, Pressable, Alert } from "react-native";
 import { Text, useTheme } from "react-native-paper";
-import { InputAmount, TransactionItem, Header } from "../components/index";
+import { TransactionItem, Header } from "../components/index";
 import { useSQLiteContext } from "expo-sqlite";
 import { drizzle } from "drizzle-orm/expo-sqlite";
 import * as productSchema from "../database/schemas/productSchema";
-import { asc, desc, eq, like } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { useFocusEffect } from "@react-navigation/native";
 
-const CATEGORIES = [
-  { id: 1, name: "Alimentação", icon: "silverware-fork-knife" },
-  { id: 2, name: "Transporte", icon: "bus" },
-  { id: 3, name: "Entretenimento", icon: "party-popper" },
-  { id: 4, name: "Compras", icon: "shopping" },
-  { id: 5, name: "Contas", icon: "file-document-outline" },
-  { id: 6, name: "Outro", icon: "dots-horizontal" },
-];
-
-type Data = {
-  id: number;
-  description: string;
-  categoryId: number | null;
-  date: string;
-  value: number;
+// Mapa de ícone por nome de categoria (mantido em sincronia com NewEntryScreen)
+const CATEGORY_ICONS: Record<string, string> = {
+  Alimentação: "silverware-fork-knife",
+  Transporte: "bus",
+  Entretenimento: "party-popper",
+  Compras: "shopping",
+  Contas: "file-document-outline",
+  Salário: "cash",
+  Freelance: "laptop",
 };
+const DEFAULT_ICON = "dots-horizontal";
 
-const formatarData = (dataIso: string) => {
+type Entry = typeof productSchema.entry.$inferSelect;
+
+const formatarData = (dataIso: string): string => {
   const date = new Date(dataIso);
-
   const options: Intl.DateTimeFormatOptions = {
     timeZone: "America/Sao_Paulo",
     hour: "2-digit",
@@ -37,117 +33,87 @@ const formatarData = (dataIso: string) => {
     year: "2-digit",
     hour12: false,
   };
-
   const formatter = new Intl.DateTimeFormat("pt-BR", options);
   const parts = formatter.formatToParts(date);
-
-  const getPart = (type: string) => parts.find((p) => p.type === type)?.value;
-
-  const hora = getPart("hour");
-  const minuto = getPart("minute");
-  const dia = getPart("day");
-  const mes = getPart("month");
-  const ano = getPart("year");
-
-  return `${hora}:${minuto}h - ${dia}/${mes}/${ano}`;
+  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "??";
+  return `${get("hour")}:${get("minute")}h - ${get("day")}/${get("month")}/${get("year")}`;
 };
 
 export function HomeScreen({ navigation }: any) {
   const theme = useTheme();
-
   const database = useSQLiteContext();
-  const db = drizzle(database, { schema: productSchema });
+  // useMemo: evita recriar o objeto drizzle a cada render
+  const db = useMemo(
+    () => drizzle(database, { schema: productSchema }),
+    [database],
+  );
 
-  const [search, setSearch] = useState("");
-  const [data, setData] = useState<Data[]>([]);
+  const [entries, setEntries] = useState<Entry[]>([]);
+  const [walletBalance, setWalletBalance] = useState<number>(0);
 
-  const [wallet, setWallet] = useState<number | 0>(0);
-
-  async function fetchProducts() {
+  async function fetchData() {
     try {
-      const responseWallet = await db.query.wallet.findMany({
-        where: like(productSchema.wallet.value, `%${search}%`),
-      });
-      const response = await db.query.entry.findMany({
-        where: like(productSchema.entry.description, `%${search}%`),
-        orderBy: [desc(productSchema.entry.date)],
-        limit: 5,
-      });
-      setWallet(responseWallet[0].value);
-      setData(response);
+      // Wallet: se não existir ainda, mantém 0 sem crashar
+      const walletRows = await db.select().from(productSchema.wallet).limit(1);
+      setWalletBalance(walletRows[0]?.value ?? 0);
+
+      const response = await db
+        .select()
+        .from(productSchema.entry)
+        .orderBy(desc(productSchema.entry.date))
+        .limit(5);
+      setEntries(response);
     } catch (error) {
-      console.log(error);
+      console.error("Erro ao buscar dados:", error);
     }
   }
 
   async function remove(id: number) {
-    try {
-      Alert.alert("Remover", "Deseja remover?", [
-        {
-          text: "Cancelar",
-          style: "cancel",
-        },
-        {
-          text: "Sim",
-          onPress: async () => {
-            const entry = await db.query.entry.findFirst({
-              where: eq(productSchema.entry.id, id),
-            });
+    const entryToDelete = await db
+      .select()
+      .from(productSchema.entry)
+      .where(eq(productSchema.entry.id, id))
+      .limit(1);
+
+    if (entryToDelete.length === 0) return;
+    const entry = entryToDelete[0];
+
+    Alert.alert("Remover lançamento", "Deseja remover este lançamento?", [
+      { text: "Cancelar", style: "cancel" },
+      {
+        text: "Remover",
+        style: "destructive",
+        onPress: async () => {
+          try {
             await db
               .delete(productSchema.entry)
               .where(eq(productSchema.entry.id, id));
 
-            await db
-              .delete(productSchema.category)
-              .where(eq(productSchema.category.id, entry?.categoryId ?? 0));
+            // CORREÇÃO: não apaga a categoria — ela é compartilhada entre lançamentos.
+            // Apenas estorna o valor no saldo.
             await db
               .update(productSchema.wallet)
-              .set({
-                value: wallet + (entry?.value || 0),
-              })
+              .set({ value: walletBalance - entry.value })
               .where(eq(productSchema.wallet.id, 1));
 
-            await fetchProducts();
-          },
+            await fetchData();
+          } catch (error) {
+            console.error("Erro ao remover:", error);
+          }
         },
-      ]);
-    } catch (error) {
-      console.log(error);
-    }
+      },
+    ]);
   }
 
   useFocusEffect(
     useCallback(() => {
-      fetchProducts();
-      return () => {};
+      fetchData();
     }, []),
   );
 
   useEffect(() => {
-    fetchProducts();
-  }, [search]);
-
-  async function show(id: number) {
-    try {
-      const entry = await db.query.entry.findFirst({
-        where: eq(productSchema.entry.id, id),
-      });
-      const category = entry?.categoryId
-        ? await db.query.category.findFirst({
-            where: eq(productSchema.category.id, entry.categoryId),
-          })
-        : null;
-      console.log(entry, category);
-
-      if (entry && category) {
-        console.log("=== DADOS RECUPERADOS ===");
-        console.log(JSON.stringify({ entry, category }, null, 2));
-        console.log("=========================");
-      }
-    } catch (error) {
-      console.log(error);
-    }
-  }
+    fetchData();
+  }, []);
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors.background }}>
@@ -159,8 +125,27 @@ export function HomeScreen({ navigation }: any) {
       />
 
       <View style={{ flex: 1, paddingHorizontal: 24, paddingBottom: 50 }}>
-        <View style={styles.amountContainer}>
-          <InputAmount value={wallet} onChangeValue={setWallet} />
+        {/* Wallet como TEXT, não TextInput — bug #2 do backlog resolvido */}
+        <View
+          style={[styles.walletCard, { backgroundColor: theme.colors.surface }]}
+        >
+          <Text
+            variant="labelMedium"
+            style={{ color: theme.colors.onSurfaceVariant }}
+          >
+            Saldo atual
+          </Text>
+          <Text
+            variant="headlineLarge"
+            style={{
+              fontWeight: "bold",
+              color: walletBalance >= 0 ? "#27AE60" : theme.colors.error,
+              marginTop: 4,
+            }}
+          >
+            {walletBalance < 0 ? "-" : ""}R${" "}
+            {Math.abs(walletBalance).toFixed(2).replace(".", ",")}
+          </Text>
         </View>
 
         <Text
@@ -175,41 +160,36 @@ export function HomeScreen({ navigation }: any) {
         </Text>
 
         <FlatList
-          data={data}
+          data={entries}
           keyExtractor={(item) => String(item.id)}
           renderItem={({ item }) => (
-            <Pressable
-              onLongPress={() => remove(item.id)}
-              onPress={() => show(item.id)}
-            >
+            <Pressable onLongPress={() => remove(item.id)}>
               <TransactionItem
                 title={item.description}
                 date={formatarData(item.date)}
-                amount={item.value}
-                type="outcome"
-                categoryIcon={
-                  CATEGORIES.find(
-                    (cat) => String(cat.id) === String(item.categoryId),
-                  )?.icon || "dots-horizontal"
-                }
+                amount={Math.abs(item.value)}
+                // type dinâmico baseado no sinal do valor — não mais hardcoded "outcome"
+                type={item.value >= 0 ? "income" : "outcome"}
+                categoryIcon={DEFAULT_ICON}
               />
             </Pressable>
           )}
           ListEmptyComponent={() => (
-            <TransactionItem
-              title="Lista vazia"
-              description=""
-              amount={0}
-              type="income"
-              categoryIcon=""
-            />
+            <Text
+              style={{
+                color: theme.colors.onSurfaceVariant,
+                textAlign: "center",
+                marginTop: 40,
+              }}
+            >
+              Nenhum lançamento ainda. Toque em + para começar.
+            </Text>
           )}
-          contentContainerStyle={{ gap: 15, paddingBottom: 100 }}
+          contentContainerStyle={{ paddingBottom: 100 }}
           style={{ flex: 1 }}
         />
       </View>
 
-      {/* Botão Flutuante (FAB) */}
       <View style={styles.fabContainer}>
         <Pressable onPress={() => navigation.navigate("NewEntryScreen")}>
           <Text style={styles.fabText}>+</Text>
@@ -220,17 +200,23 @@ export function HomeScreen({ navigation }: any) {
 }
 
 const styles = StyleSheet.create({
-  amountContainer: {
-    marginTop: 40,
-    marginBottom: 20,
-    alignItems: "center",
+  walletCard: {
+    marginTop: 32,
+    marginBottom: 8,
+    padding: 24,
+    borderRadius: 20,
+    elevation: 2,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
   },
   fabContainer: {
     width: 67,
     height: 67,
     borderRadius: 35,
     overflow: "hidden",
-    backgroundColor: "#1f9be2ff",
+    backgroundColor: "#1f9be2",
     position: "absolute",
     bottom: 30,
     right: 30,
@@ -243,7 +229,7 @@ const styles = StyleSheet.create({
     shadowRadius: 3.84,
   },
   fabText: {
-    color: "#ffffff",
+    color: "#fff",
     fontSize: 40,
     textAlign: "center",
     marginTop: -5,
