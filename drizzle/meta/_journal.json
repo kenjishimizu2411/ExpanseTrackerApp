@@ -15,6 +15,13 @@
       "when": 1767116915117,
       "tag": "0001_striped_rattler",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1773681401292,
+      "tag": "0002_friendly_justice",
+      "breakpoints": true
     }
   ]
 }
